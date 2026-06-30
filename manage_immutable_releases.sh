@@ -12,7 +12,6 @@ ORG=""
 PATTERN=""
 ACTION=""
 LIVE_MODE=false
-REPOSITORY_LIMIT=1000
 RED=""
 GREEN=""
 YELLOW=""
@@ -30,8 +29,6 @@ Options:
   --org ORG       GitHub organization containing the repositories.
   --pattern GLOB  Shell glob matched against repository names. A name without
                   glob metacharacters is an exact match.
-  --limit COUNT   Maximum repositories to fetch for glob matching (default:
-                  1000; must be 1 or greater).
   --enable        Enable immutable releases on matching repositories.
   --disable       Disable immutable releases on matching repositories.
   --kimi-mode     Perform live mutations instead of the default dry run.
@@ -71,10 +68,6 @@ print_discovery_success() {
 
 print_failure() {
     printf '%s❌ %s%s\n' "${RED}" "$*" "${RESET}" >&2
-}
-
-print_warning() {
-    printf '%s⚠️  %s%s\n' "${YELLOW}" "$*" "${RESET}" >&2
 }
 
 print_unchanged() {
@@ -119,11 +112,6 @@ parse_arguments() {
                 PATTERN="$2"
                 shift 2
                 ;;
-            --limit)
-                (( $# >= 2 )) || usage_error "--limit requires a value"
-                REPOSITORY_LIMIT="$2"
-                shift 2
-                ;;
             --enable)
                 set_action "enable"
                 shift
@@ -151,9 +139,6 @@ parse_arguments() {
     [[ "${ORG}" != */* ]] || usage_error "--org must not contain a slash"
     [[ -n "${PATTERN}" ]] || usage_error "--pattern is required"
     [[ "${PATTERN}" != */* ]] || usage_error "--pattern must match repository names, not paths"
-    [[ "${REPOSITORY_LIMIT}" =~ ^[0-9]+$ ]] || usage_error "--limit must be a positive integer"
-    REPOSITORY_LIMIT=$((10#${REPOSITORY_LIMIT}))
-    (( REPOSITORY_LIMIT >= 1 )) || usage_error "--limit must be a positive integer"
     [[ -n "${ACTION}" ]] || usage_error "exactly one of --enable or --disable is required"
 }
 
@@ -183,9 +168,7 @@ discover_repositories() {
     local repository
     local page=1
     local page_count
-    local page_retained
     local total_count=0
-    local limit_reached=false
 
     if [[ "${PATTERN}" != *'*'* && "${PATTERN}" != *'?'* && "${PATTERN}" != *'['* ]]; then
         print_progress "Looking up exact repository ${ORG}/${PATTERN}..."
@@ -212,38 +195,22 @@ discover_repositories() {
         fi
 
         page_count=0
-        page_retained=0
         while IFS= read -r repository; do
             [[ -n "${repository}" ]] || continue
             page_count=$((page_count + 1))
-            if (( total_count < REPOSITORY_LIMIT )); then
-                printf '%s\n' "${repository}"
-                total_count=$((total_count + 1))
-                page_retained=$((page_retained + 1))
-            fi
+            printf '%s\n' "${repository}"
+            total_count=$((total_count + 1))
         done <<<"${page_repositories}"
 
-        print_progress "Fetched page ${page}: ${page_count} repositories (${total_count} of ${REPOSITORY_LIMIT} limit retained)."
+        print_progress "Fetched page ${page}: ${page_count} repositories (${total_count} total)."
 
-        if (( page_retained < page_count )); then
-            limit_reached=true
-            break
-        fi
         if (( page_count < 100 )); then
-            break
-        fi
-        if (( total_count >= REPOSITORY_LIMIT )); then
-            limit_reached=true
             break
         fi
         page=$((page + 1))
     done
 
-    if [[ "${limit_reached}" == "true" ]]; then
-        print_warning "Repository limit ${REPOSITORY_LIMIT} reached; additional repositories may exist."
-    else
-        print_discovery_success "Repository discovery complete: ${total_count} repositories scanned."
-    fi
+    print_discovery_success "Repository discovery complete: ${total_count} repositories scanned."
 }
 
 read_immutable_state() {
@@ -326,7 +293,6 @@ main() {
     printf '%s🚦 Mode: %s%s\n' "${BOLD}" "${mode}" "${RESET}"
     printf '🏢 Organization: %s\n' "${ORG}"
     printf '🎯 Pattern: %s\n' "${PATTERN}"
-    printf '📚 Repository limit: %d\n' "${REPOSITORY_LIMIT}"
     printf '🔐 Requested state: enabled=%s\n\n' "${desired_enabled}"
 
     if ! discovered_repositories="$(discover_repositories)"; then

@@ -50,7 +50,7 @@ setup() {
 
     [ "${status}" -eq 0 ]
     assert_output_contains "Discovering repositories in example-org (100 per API page)"
-    assert_output_contains "Fetched page 1: 3 repositories (3 of 1000 limit retained)."
+    assert_output_contains "Fetched page 1: 3 repositories (3 total)."
     assert_output_contains "Repository discovery complete: 3 repositories scanned."
     assert_output_contains "Matched repositories: 2"
     assert_output_contains "Summary: matched=2 changed=0 unchanged=0 planned=2 failed=0"
@@ -70,37 +70,13 @@ setup() {
     run "${TOOL}" --org example-org --pattern 'service-*' --enable
 
     [ "${status}" -eq 0 ]
-    assert_output_contains "Fetched page 1: 100 repositories (100 of 1000 limit retained)."
-    assert_output_contains "Fetched page 2: 1 repositories (101 of 1000 limit retained)."
+    assert_output_contains "Fetched page 1: 100 repositories (100 total)."
+    assert_output_contains "Fetched page 2: 1 repositories (101 total)."
     assert_output_contains "Summary: matched=101 changed=0 unchanged=0 planned=101 failed=0"
     assert_log_contains "page=2"
 }
 
-@test "a configured repository limit stops discovery with a warning" {
-    add_repository "service-001" false false
-    add_repository "service-002" false false
-    add_repository "service-003" false false
-
-    run "${TOOL}" --org example-org --pattern 'service-*' --limit 2 --enable
-
-    [ "${status}" -eq 0 ]
-    assert_output_contains "Repository limit 2 reached; additional repositories may exist."
-    assert_output_contains "Matched repositories: 2"
-    assert_output_contains "Summary: matched=2 changed=0 unchanged=0 planned=2 failed=0"
-    [[ "${output}" != *"📦 [3/"* ]]
-}
-
-@test "zero and non-numeric repository limits are rejected" {
-    run "${TOOL}" --org example-org --pattern 'service-*' --limit 0 --enable
-    [ "${status}" -eq 2 ]
-    assert_output_contains "--limit must be a positive integer"
-
-    run "${TOOL}" --org example-org --pattern 'service-*' --limit unlimited --enable
-    [ "${status}" -eq 2 ]
-    assert_output_contains "--limit must be a positive integer"
-}
-
-@test "a limit above 1000 discovers repositories on later pages" {
+@test "glob discovery continues beyond 1000 repositories" {
     local index=1
     local repository
 
@@ -110,10 +86,10 @@ setup() {
     done
     add_repository "service-target" false false
 
-    run "${TOOL}" --org example-org --pattern 'service-*' --limit 1001 --enable
+    run "${TOOL}" --org example-org --pattern 'service-*' --enable
 
     [ "${status}" -eq 0 ]
-    assert_output_contains "Fetched page 11: 1 repositories (1001 of 1001 limit retained)."
+    assert_output_contains "Fetched page 11: 1 repositories (1001 total)."
     assert_output_contains "Repository discovery complete: 1001 repositories scanned."
     assert_output_contains "Matched repositories: 1"
     assert_log_contains "page=11"

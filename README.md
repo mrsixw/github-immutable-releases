@@ -70,7 +70,6 @@ NO_COLOR=1 ./manage_immutable_releases.sh \
 🚦 Mode: DRY RUN
 🏢 Organization: mrsixw
 🎯 Pattern: github-immutable-releases
-📚 Repository limit: 1000
 🔐 Requested state: enabled=true
 
 🔎 Looking up exact repository mrsixw/github-immutable-releases...
@@ -89,13 +88,12 @@ not expand them before the script receives them. Supported matching follows
 Bash shell-glob rules. A repository name without metacharacters is an exact
 match.
 
-Glob discovery fetches at most 1,000 repositories by default, ordered by full
-name. Change the positive total cap with `--limit COUNT`; values above 1,000
-are supported when an organization is larger. Exact repository lookups do not
-enumerate the organization. GitHub's
-[organization repositories endpoint][organization-repositories-api] returns a
-maximum of 100 repositories per page, so the script displays progress as each
-page arrives.
+Glob discovery fetches every repository in the organization, ordered by full
+name. There is no script-imposed total cap. Exact repository lookups do not
+enumerate the organization. GitHub's [organization repositories
+endpoint][organization-repositories-api] returns a maximum of 100 repositories
+per page, so the script requests every page and displays progress as each one
+arrives.
 
 ## Behaviour
 
@@ -108,8 +106,8 @@ For every matching repository, the script:
 5. Continues processing after individual failures and returns a summary.
 
 Output uses green `✅` messages for successful changes, red `❌` messages for
-failures, yellow `⏭️` or `⚠️` messages for unchanged states and warnings, and
-progress icons during discovery. Colour is enabled by default; set
+failures, yellow `⏭️` messages for unchanged states, and progress icons during
+discovery. Colour is enabled by default; set
 `NO_COLOR=1` to suppress ANSI colours while retaining the status symbols.
 
 Repository-level disabling is rejected when immutable releases are enforced by
