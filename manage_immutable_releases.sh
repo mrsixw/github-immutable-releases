@@ -31,7 +31,7 @@ Options:
   --pattern GLOB  Shell glob matched against repository names. A name without
                   glob metacharacters is an exact match.
   --limit COUNT   Maximum repositories to fetch for glob matching (default:
-                  1000; allowed range: 1-1000).
+                  1000; must be 1 or greater).
   --enable        Enable immutable releases on matching repositories.
   --disable       Disable immutable releases on matching repositories.
   --kimi-mode     Perform live mutations instead of the default dry run.
@@ -153,10 +153,9 @@ parse_arguments() {
     [[ "${ORG}" != */* ]] || usage_error "--org must not contain a slash"
     [[ -n "${PATTERN}" ]] || usage_error "--pattern is required"
     [[ "${PATTERN}" != */* ]] || usage_error "--pattern must match repository names, not paths"
-    [[ "${REPOSITORY_LIMIT}" =~ ^[0-9]+$ ]] || usage_error "--limit must be an integer from 1 to 1000"
+    [[ "${REPOSITORY_LIMIT}" =~ ^[0-9]+$ ]] || usage_error "--limit must be a positive integer"
     REPOSITORY_LIMIT=$((10#${REPOSITORY_LIMIT}))
-    (( REPOSITORY_LIMIT >= 1 && REPOSITORY_LIMIT <= 1000 )) || \
-        usage_error "--limit must be an integer from 1 to 1000"
+    (( REPOSITORY_LIMIT >= 1 )) || usage_error "--limit must be a positive integer"
     [[ -n "${ACTION}" ]] || usage_error "exactly one of --enable or --disable is required"
 }
 

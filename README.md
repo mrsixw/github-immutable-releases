@@ -90,8 +90,9 @@ Bash shell-glob rules. A repository name without metacharacters is an exact
 match.
 
 Glob discovery fetches at most 1,000 repositories by default, ordered by full
-name. Set a smaller cap with `--limit COUNT`; accepted values are 1 through
-1,000. Exact repository lookups do not enumerate the organization. GitHub's
+name. Change the positive total cap with `--limit COUNT`; values above 1,000
+are supported when an organization is larger. Exact repository lookups do not
+enumerate the organization. GitHub's
 [organization repositories endpoint][organization-repositories-api] returns a
 maximum of 100 repositories per page, so the script displays progress as each
 page arrives.

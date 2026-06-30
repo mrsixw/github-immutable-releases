@@ -90,14 +90,33 @@ setup() {
     [[ "${output}" != *"📦 [3/"* ]]
 }
 
-@test "repository limits outside 1 to 1000 are rejected" {
+@test "zero and non-numeric repository limits are rejected" {
     run "${TOOL}" --org example-org --pattern 'service-*' --limit 0 --enable
     [ "${status}" -eq 2 ]
-    assert_output_contains "--limit must be an integer from 1 to 1000"
+    assert_output_contains "--limit must be a positive integer"
+
+    run "${TOOL}" --org example-org --pattern 'service-*' --limit unlimited --enable
+    [ "${status}" -eq 2 ]
+    assert_output_contains "--limit must be a positive integer"
+}
+
+@test "a limit above 1000 discovers repositories on later pages" {
+    local index=1
+    local repository
+
+    while (( index <= 1000 )); do
+        printf 'library-%04d\n' "${index}" >>"${MOCK_REPOS_FILE}"
+        index=$((index + 1))
+    done
+    add_repository "service-target" false false
 
     run "${TOOL}" --org example-org --pattern 'service-*' --limit 1001 --enable
-    [ "${status}" -eq 2 ]
-    assert_output_contains "--limit must be an integer from 1 to 1000"
+
+    [ "${status}" -eq 0 ]
+    assert_output_contains "Fetched page 11: 1 repositories (1001 of 1001 limit retained)."
+    assert_output_contains "Repository discovery complete: 1001 repositories scanned."
+    assert_output_contains "Matched repositories: 1"
+    assert_log_contains "page=11"
 }
 
 @test "no matches returns a failure without reading repository state" {
