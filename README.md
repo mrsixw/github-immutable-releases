@@ -93,7 +93,8 @@ name. There is no script-imposed total cap. Exact repository lookups do not
 enumerate the organization. GitHub's [organization repositories
 endpoint][organization-repositories-api] returns a maximum of 100 repositories
 per page, so the script requests every page and displays progress as each one
-arrives.
+arrives. A failed page request is retried up to three times before discovery is
+reported as failed.
 
 ## Behaviour
 

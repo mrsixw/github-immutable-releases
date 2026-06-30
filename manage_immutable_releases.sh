@@ -7,6 +7,8 @@ set -o pipefail
 
 readonly API_HOST="github.com"
 readonly API_VERSION="2026-03-10"
+readonly API_MAX_ATTEMPTS="${API_MAX_ATTEMPTS:-3}"
+readonly API_RETRY_DELAY_SECONDS="${API_RETRY_DELAY_SECONDS:-2}"
 
 ORG=""
 PATTERN=""
@@ -68,6 +70,10 @@ print_discovery_success() {
 
 print_failure() {
     printf '%s❌ %s%s\n' "${RED}" "$*" "${RESET}" >&2
+}
+
+print_warning() {
+    printf '%s⚠️  %s%s\n' "${YELLOW}" "$*" "${RESET}" >&2
 }
 
 print_unchanged() {
@@ -162,6 +168,31 @@ github_api() {
         "$@"
 }
 
+fetch_repository_page() {
+    local page="$1"
+    local attempt=1
+    local repositories
+
+    while (( attempt <= API_MAX_ATTEMPTS )); do
+        if repositories="$(
+            github_api \
+                "orgs/${ORG}/repos?per_page=100&type=all&sort=full_name&direction=asc&page=${page}" \
+                --jq '.[].name'
+        )"; then
+            printf '%s\n' "${repositories}"
+            return 0
+        fi
+
+        if (( attempt == API_MAX_ATTEMPTS )); then
+            return 1
+        fi
+
+        print_warning "Page ${page} fetch failed (attempt ${attempt}/${API_MAX_ATTEMPTS}); retrying in ${API_RETRY_DELAY_SECONDS}s."
+        sleep "${API_RETRY_DELAY_SECONDS}"
+        attempt=$((attempt + 1))
+    done
+}
+
 discover_repositories() {
     local exact_repository
     local page_repositories
@@ -186,11 +217,7 @@ discover_repositories() {
 
     print_progress "Discovering repositories in ${ORG} (100 per API page)..."
     while :; do
-        if ! page_repositories="$(
-            github_api \
-                "orgs/${ORG}/repos?per_page=100&type=all&sort=full_name&direction=asc&page=${page}" \
-                --jq '.[].name'
-        )"; then
+        if ! page_repositories="$(fetch_repository_page "${page}")"; then
             return 1
         fi
 
