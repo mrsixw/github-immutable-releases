@@ -19,6 +19,9 @@ mock_api() {
     local repository_path
     local repository
     local state_file
+    local page
+    local start_line
+    local end_line
 
     log_call api "$@"
 
@@ -51,7 +54,10 @@ mock_api() {
             printf 'mock discovery failure\n' >&2
             return 1
         fi
-        cat "${MOCK_REPOS_FILE}"
+        page="${endpoint##*page=}"
+        start_line=$(((page - 1) * 100 + 1))
+        end_line=$((page * 100))
+        sed -n "${start_line},${end_line}p" "${MOCK_REPOS_FILE}"
         return 0
     fi
 

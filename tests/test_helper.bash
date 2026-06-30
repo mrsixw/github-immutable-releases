@@ -17,6 +17,8 @@ setup_test_environment() {
     unset MOCK_MUTATION_FAIL_REPO
     unset MOCK_STATE_FAIL_REPO
     unset MOCK_VERIFY_FAIL_REPO
+    unset FORCE_COLOR
+    unset NO_COLOR
 }
 
 add_repository() {

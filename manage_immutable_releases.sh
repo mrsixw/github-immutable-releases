@@ -12,6 +12,14 @@ ORG=""
 PATTERN=""
 ACTION=""
 LIVE_MODE=false
+REPOSITORY_LIMIT=1000
+RED=""
+GREEN=""
+YELLOW=""
+CYAN=""
+BLUE=""
+BOLD=""
+RESET=""
 
 usage() {
     cat <<'EOF'
@@ -22,6 +30,8 @@ Options:
   --org ORG       GitHub organization containing the repositories.
   --pattern GLOB  Shell glob matched against repository names. A name without
                   glob metacharacters is an exact match.
+  --limit COUNT   Maximum repositories to fetch for glob matching (default:
+                  1000; allowed range: 1-1000).
   --enable        Enable immutable releases on matching repositories.
   --disable       Disable immutable releases on matching repositories.
   --kimi-mode     Perform live mutations instead of the default dry run.
@@ -33,8 +43,57 @@ The script is always a dry run unless a live-mode flag is provided.
 EOF
 }
 
+setup_colors() {
+    if [[ -n "${NO_COLOR:-}" ]]; then
+        return
+    fi
+
+    if [[ "${FORCE_COLOR:-}" == "1" || -t 1 || -t 2 ]]; then
+        RED=$'\033[31m'
+        GREEN=$'\033[32m'
+        YELLOW=$'\033[33m'
+        CYAN=$'\033[36m'
+        BLUE=$'\033[34m'
+        BOLD=$'\033[1m'
+        RESET=$'\033[0m'
+    fi
+}
+
+print_progress() {
+    printf '%s🔎 %s%s\n' "${CYAN}" "$*" "${RESET}" >&2
+}
+
+print_success() {
+    printf '%s✅ %s%s\n' "${GREEN}" "$*" "${RESET}"
+}
+
+print_discovery_success() {
+    printf '%s✅ %s%s\n' "${GREEN}" "$*" "${RESET}" >&2
+}
+
+print_failure() {
+    printf '%s❌ %s%s\n' "${RED}" "$*" "${RESET}" >&2
+}
+
+print_warning() {
+    printf '%s⚠️  %s%s\n' "${YELLOW}" "$*" "${RESET}" >&2
+}
+
+print_unchanged() {
+    printf '%s⏭️  %s%s\n' "${YELLOW}" "$*" "${RESET}"
+}
+
+print_info() {
+    printf '%sℹ️  %s%s\n' "${BLUE}" "$*" "${RESET}"
+}
+
+print_dry_run() {
+    printf '%s🧪 %s%s\n' "${CYAN}" "$*" "${RESET}"
+}
+
 usage_error() {
-    printf 'Error: %s\n\n' "$1" >&2
+    print_failure "Error: $1"
+    printf '\n' >&2
     usage >&2
     exit 2
 }
@@ -60,6 +119,11 @@ parse_arguments() {
             --pattern)
                 (( $# >= 2 )) || usage_error "--pattern requires a value"
                 PATTERN="$2"
+                shift 2
+                ;;
+            --limit)
+                (( $# >= 2 )) || usage_error "--limit requires a value"
+                REPOSITORY_LIMIT="$2"
                 shift 2
                 ;;
             --enable)
@@ -89,17 +153,21 @@ parse_arguments() {
     [[ "${ORG}" != */* ]] || usage_error "--org must not contain a slash"
     [[ -n "${PATTERN}" ]] || usage_error "--pattern is required"
     [[ "${PATTERN}" != */* ]] || usage_error "--pattern must match repository names, not paths"
+    [[ "${REPOSITORY_LIMIT}" =~ ^[0-9]+$ ]] || usage_error "--limit must be an integer from 1 to 1000"
+    REPOSITORY_LIMIT=$((10#${REPOSITORY_LIMIT}))
+    (( REPOSITORY_LIMIT >= 1 && REPOSITORY_LIMIT <= 1000 )) || \
+        usage_error "--limit must be an integer from 1 to 1000"
     [[ -n "${ACTION}" ]] || usage_error "exactly one of --enable or --disable is required"
 }
 
 check_prerequisites() {
     if ! command -v gh >/dev/null 2>&1; then
-        printf 'Error: GitHub CLI (gh) is required.\n' >&2
+        print_failure "Error: GitHub CLI (gh) is required."
         exit 1
     fi
 
     if ! gh auth status --hostname "${API_HOST}" >/dev/null 2>&1; then
-        printf 'Error: GitHub CLI is not authenticated for %s.\n' "${API_HOST}" >&2
+        print_failure "Error: GitHub CLI is not authenticated for ${API_HOST}."
         exit 1
     fi
 }
@@ -113,17 +181,72 @@ github_api() {
 }
 
 discover_repositories() {
+    local exact_repository
+    local page_repositories
+    local repository
+    local page=1
+    local page_count
+    local page_retained
+    local total_count=0
+    local limit_reached=false
+
     if [[ "${PATTERN}" != *'*'* && "${PATTERN}" != *'?'* && "${PATTERN}" != *'['* ]]; then
-        github_api \
-            "repos/${ORG}/${PATTERN}" \
-            --jq '.name'
-        return
+        print_progress "Looking up exact repository ${ORG}/${PATTERN}..."
+        if ! exact_repository="$(
+            github_api \
+                "repos/${ORG}/${PATTERN}" \
+                --jq '.name'
+        )"; then
+            return 1
+        fi
+        print_discovery_success "Exact repository found."
+        printf '%s\n' "${exact_repository}"
+        return 0
     fi
 
-    github_api \
-        --paginate \
-        "orgs/${ORG}/repos?per_page=100&type=all&sort=full_name&direction=asc" \
-        --jq '.[].name'
+    print_progress "Discovering repositories in ${ORG} (100 per API page)..."
+    while :; do
+        if ! page_repositories="$(
+            github_api \
+                "orgs/${ORG}/repos?per_page=100&type=all&sort=full_name&direction=asc&page=${page}" \
+                --jq '.[].name'
+        )"; then
+            return 1
+        fi
+
+        page_count=0
+        page_retained=0
+        while IFS= read -r repository; do
+            [[ -n "${repository}" ]] || continue
+            page_count=$((page_count + 1))
+            if (( total_count < REPOSITORY_LIMIT )); then
+                printf '%s\n' "${repository}"
+                total_count=$((total_count + 1))
+                page_retained=$((page_retained + 1))
+            fi
+        done <<<"${page_repositories}"
+
+        print_progress "Fetched page ${page}: ${page_count} repositories (${total_count} of ${REPOSITORY_LIMIT} limit retained)."
+
+        if (( page_retained < page_count )); then
+            limit_reached=true
+            break
+        fi
+        if (( page_count < 100 )); then
+            break
+        fi
+        if (( total_count >= REPOSITORY_LIMIT )); then
+            limit_reached=true
+            break
+        fi
+        page=$((page + 1))
+    done
+
+    if [[ "${limit_reached}" == "true" ]]; then
+        print_warning "Repository limit ${REPOSITORY_LIMIT} reached; additional repositories may exist."
+    else
+        print_discovery_success "Repository discovery complete: ${total_count} repositories scanned."
+    fi
 }
 
 read_immutable_state() {
@@ -187,6 +310,7 @@ main() {
     local failed=0
     local -a matching_repositories=()
 
+    setup_colors
     parse_arguments "$@"
     check_prerequisites
 
@@ -202,13 +326,14 @@ main() {
         mode="DRY RUN"
     fi
 
-    printf 'Mode: %s\n' "${mode}"
-    printf 'Organization: %s\n' "${ORG}"
-    printf 'Pattern: %s\n' "${PATTERN}"
-    printf 'Requested state: enabled=%s\n\n' "${desired_enabled}"
+    printf '%s🚦 Mode: %s%s\n' "${BOLD}" "${mode}" "${RESET}"
+    printf '🏢 Organization: %s\n' "${ORG}"
+    printf '🎯 Pattern: %s\n' "${PATTERN}"
+    printf '📚 Repository limit: %d\n' "${REPOSITORY_LIMIT}"
+    printf '🔐 Requested state: enabled=%s\n\n' "${desired_enabled}"
 
     if ! discovered_repositories="$(discover_repositories)"; then
-        printf 'Error: failed to discover repositories in %s.\n' "${ORG}" >&2
+        print_failure "Error: failed to discover repositories in ${ORG}."
         exit 1
     fi
 
@@ -221,88 +346,96 @@ main() {
     done <<<"${discovered_repositories}"
 
     if (( ${#matching_repositories[@]} == 0 )); then
-        printf 'Error: no repositories matched %s in %s.\n' "${PATTERN}" "${ORG}" >&2
+        print_failure "Error: no repositories matched ${PATTERN} in ${ORG}."
         exit 1
     fi
 
-    printf 'Matched repositories: %d\n\n' "${#matching_repositories[@]}"
+    print_success "Matched repositories: ${#matching_repositories[@]}"
+    printf '\n'
 
     for repository in "${matching_repositories[@]}"; do
         index=$((index + 1))
-        printf '[%d/%d] %s/%s\n' \
+        printf '📦 [%d/%d] %s/%s\n' \
             "${index}" "${#matching_repositories[@]}" "${ORG}" "${repository}"
 
         if ! before_state="$(read_immutable_state "${repository}")"; then
-            printf '  Result: failed to read current state.\n\n' >&2
+            print_failure "  Failed: could not read current state."
+            printf '\n'
             failed=$((failed + 1))
             continue
         fi
 
         if ! parse_state "${before_state}" before_enabled before_enforced; then
-            printf '  Result: API returned an invalid current state.\n\n' >&2
+            print_failure "  Failed: API returned an invalid current state."
+            printf '\n'
             failed=$((failed + 1))
             continue
         fi
 
-        printf '  Before: enabled=%s, enforced_by_owner=%s\n' \
-            "${before_enabled}" "${before_enforced}"
+        print_info "  Before: enabled=${before_enabled}, enforced_by_owner=${before_enforced}"
 
         if [[ "${before_enabled}" == "${desired_enabled}" ]]; then
-            printf '  Result: already in the requested state; no change needed.\n\n'
+            print_unchanged "  Unchanged: already in the requested state; no change needed."
+            printf '\n'
             unchanged=$((unchanged + 1))
             continue
         fi
 
         if [[ "${ACTION}" == "disable" && "${before_enforced}" == "true" ]]; then
-            printf '  Result: cannot disable a setting enforced by the repository owner.\n\n' >&2
+            print_failure "  Failed: cannot disable a setting enforced by the repository owner."
+            printf '\n'
             failed=$((failed + 1))
             continue
         fi
 
         if [[ "${LIVE_MODE}" != "true" ]]; then
-            printf '  Would %s immutable releases; no mutation performed.\n\n' "${ACTION}"
+            print_dry_run "  Would ${ACTION} immutable releases; no mutation performed."
+            printf '\n'
             planned=$((planned + 1))
             continue
         fi
 
-        printf '  Action: %s immutable releases.\n' "${ACTION}"
+        print_info "  Action: ${ACTION} immutable releases."
         if ! change_state "${repository}"; then
-            printf '  Result: mutation failed.\n\n' >&2
+            print_failure "  Failed: mutation request failed."
+            printf '\n'
             failed=$((failed + 1))
             continue
         fi
 
         if ! after_state="$(read_immutable_state "${repository}")"; then
-            printf '  Result: mutation completed, but verification read failed.\n\n' >&2
+            print_failure "  Failed: mutation completed, but verification read failed."
+            printf '\n'
             failed=$((failed + 1))
             continue
         fi
 
         if ! parse_state "${after_state}" after_enabled after_enforced; then
-            printf '  Result: API returned an invalid verification state.\n\n' >&2
+            print_failure "  Failed: API returned an invalid verification state."
+            printf '\n'
             failed=$((failed + 1))
             continue
         fi
 
-        printf '  After: enabled=%s, enforced_by_owner=%s\n' \
-            "${after_enabled}" "${after_enforced}"
+        print_info "  After: enabled=${after_enabled}, enforced_by_owner=${after_enforced}"
 
         if [[ "${after_enabled}" != "${desired_enabled}" ]]; then
-            printf '  Result: verification failed; requested state was not observed.\n\n' >&2
+            print_failure "  Failed: verification did not observe the requested state."
+            printf '\n'
             failed=$((failed + 1))
             continue
         fi
 
-        printf '  Result: change confirmed.\n\n'
+        print_success "  Passed: change confirmed."
+        printf '\n'
         changed=$((changed + 1))
     done
 
-    printf 'Summary: matched=%d changed=%d unchanged=%d planned=%d failed=%d\n' \
-        "${#matching_repositories[@]}" "${changed}" "${unchanged}" "${planned}" "${failed}"
-
     if (( failed > 0 )); then
+        print_failure "Summary: matched=${#matching_repositories[@]} changed=${changed} unchanged=${unchanged} planned=${planned} failed=${failed}"
         exit 1
     fi
+    print_success "Summary: matched=${#matching_repositories[@]} changed=${changed} unchanged=${unchanged} planned=${planned} failed=${failed}"
 }
 
 main "$@"
