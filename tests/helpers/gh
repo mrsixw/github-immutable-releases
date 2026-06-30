@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Mock the GitHub CLI for deterministic immutable-release script tests.
+
+set -u
+set -o pipefail
+
+log_call() {
+    local argument
+
+    for argument in "$@"; do
+        printf '%q ' "${argument}" >>"${MOCK_GH_LOG}"
+    done
+    printf '\n' >>"${MOCK_GH_LOG}"
+}
+
+mock_api() {
+    local method="GET"
+    local endpoint=""
+    local repository_path
+    local repository
+    local state_file
+
+    log_call api "$@"
+
+    while (( $# > 0 )); do
+        case "$1" in
+            --method)
+                method="$2"
+                shift 2
+                ;;
+            --hostname|-H|--jq)
+                shift 2
+                ;;
+            --paginate)
+                shift
+                ;;
+            -* )
+                shift
+                ;;
+            *)
+                if [[ -z "${endpoint}" ]]; then
+                    endpoint="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [[ "${endpoint}" == orgs/*/repos\?* ]]; then
+        if [[ "${MOCK_DISCOVERY_FAIL:-false}" == "true" ]]; then
+            printf 'mock discovery failure\n' >&2
+            return 1
+        fi
+        cat "${MOCK_REPOS_FILE}"
+        return 0
+    fi
+
+    if [[ "${endpoint}" == repos/*/* && "${endpoint}" != */immutable-releases ]]; then
+        repository="${endpoint##*/}"
+        if grep -F -x -- "${repository}" "${MOCK_REPOS_FILE}" >/dev/null; then
+            printf '%s\n' "${repository}"
+            return 0
+        fi
+        printf 'mock repository not found: %s\n' "${repository}" >&2
+        return 1
+    fi
+
+    if [[ "${endpoint}" != repos/*/*/immutable-releases ]]; then
+        printf 'mock received an unexpected endpoint: %s\n' "${endpoint}" >&2
+        return 1
+    fi
+
+    repository_path="${endpoint#repos/}"
+    repository_path="${repository_path#*/}"
+    repository="${repository_path%/immutable-releases}"
+    state_file="${MOCK_STATE_DIR}/${repository}"
+
+    if [[ "${method}" == "GET" ]]; then
+        if [[ "${MOCK_STATE_FAIL_REPO:-}" == "${repository}" ]]; then
+            printf 'mock state failure for %s\n' "${repository}" >&2
+            return 1
+        fi
+        cat "${state_file}"
+        return 0
+    fi
+
+    if [[ "${MOCK_MUTATION_FAIL_REPO:-}" == "${repository}" ]]; then
+        printf 'mock mutation failure for %s\n' "${repository}" >&2
+        return 1
+    fi
+
+    if [[ "${MOCK_VERIFY_FAIL_REPO:-}" == "${repository}" ]]; then
+        return 0
+    fi
+
+    case "${method}" in
+        PUT)
+            printf 'true\tfalse\n' >"${state_file}"
+            ;;
+        DELETE)
+            printf 'false\tfalse\n' >"${state_file}"
+            ;;
+        *)
+            printf 'mock received an unexpected method: %s\n' "${method}" >&2
+            return 1
+            ;;
+    esac
+}
+
+main() {
+    local command="${1:-}"
+
+    if (( $# > 0 )); then
+        shift
+    fi
+
+    case "${command}" in
+        auth)
+            log_call auth "$@"
+            if [[ "${MOCK_AUTH_FAIL:-false}" == "true" ]]; then
+                return 1
+            fi
+            return 0
+            ;;
+        api)
+            mock_api "$@"
+            ;;
+        *)
+            printf 'mock received an unexpected command: %s\n' "${command}" >&2
+            return 1
+            ;;
+    esac
+}
+
+main "$@"
