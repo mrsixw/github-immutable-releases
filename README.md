@@ -55,10 +55,45 @@ The deliberately verbose alias is also accepted:
 --yes-yes-yes-i-know-what-im-doing
 ```
 
+### Example dry-run output
+
+This exact repository lookup was run with:
+
+```bash
+NO_COLOR=1 ./manage_immutable_releases.sh \
+    --org mrsixw \
+    --pattern github-immutable-releases \
+    --enable
+```
+
+```text
+🚦 Mode: DRY RUN
+🏢 Organization: mrsixw
+🎯 Pattern: github-immutable-releases
+🔐 Requested state: enabled=true
+
+🔎 Looking up exact repository mrsixw/github-immutable-releases...
+✅ Exact repository found.
+✅ Matched repositories: 1
+
+📦 [1/1] mrsixw/github-immutable-releases
+ℹ️    Before: enabled=false, enforced_by_owner=false
+🧪   Would enable immutable releases; no mutation performed.
+
+✅ Summary: matched=1 changed=0 unchanged=0 planned=1 failed=0
+```
+
 Always quote patterns containing glob metacharacters so the local shell does
 not expand them before the script receives them. Supported matching follows
 Bash shell-glob rules. A repository name without metacharacters is an exact
 match.
+
+Glob discovery fetches every repository in the organization, ordered by full
+name. There is no script-imposed total cap. Exact repository lookups do not
+enumerate the organization. GitHub's [organization repositories
+endpoint][organization-repositories-api] returns a maximum of 100 repositories
+per page, so the script requests every page and displays progress as each one
+arrives.
 
 ## Behaviour
 
@@ -69,6 +104,11 @@ For every matching repository, the script:
 3. Skips repositories already in the requested state.
 4. Re-reads the state after a live mutation and verifies the result.
 5. Continues processing after individual failures and returns a summary.
+
+Output uses green `✅` messages for successful changes, red `❌` messages for
+failures, yellow `⏭️` messages for unchanged states, and progress icons during
+discovery. Colour is enabled by default; set
+`NO_COLOR=1` to suppress ANSI colours while retaining the status symbols.
 
 Repository-level disabling is rejected when immutable releases are enforced by
 the repository owner. The script returns a non-zero status if discovery fails,
@@ -121,10 +161,11 @@ in GitHub's [repository API documentation][immutable-releases-api].
 Install [Bats][bats] and [ShellCheck][shellcheck], then run:
 
 ```bash
-bash -n manage_immutable_releases.sh tests/helpers/gh tests/test_helper.bash
-shellcheck manage_immutable_releases.sh tests/helpers/gh tests/test_helper.bash
-bats tests
+make check
 ```
+
+Use `make lint` for Bash syntax and ShellCheck, or `make test` for the Bats
+suite alone.
 
 The Bats suite places a mock `gh` executable first in `PATH`; it never contacts
 GitHub or mutates real repositories. GitHub Actions runs the same syntax, lint,
@@ -143,5 +184,6 @@ Released under the MIT License. See `LICENSE`.
 [github-cli]: https://cli.github.com/
 [immutable-releases-announcement]: https://github.blog/changelog/2025-10-28-immutable-releases-are-now-generally-available/
 [immutable-releases-api]: https://docs.github.com/rest/repos/repos?apiVersion=2026-03-10#check-if-immutable-releases-are-enabled-for-a-repository
+[organization-repositories-api]: https://docs.github.com/rest/repos/repos?apiVersion=2026-03-10#list-organization-repositories
 [shellcheck]: https://www.shellcheck.net/
 [sso-authorization]: https://docs.github.com/authentication/authenticating-with-single-sign-on/authorizing-a-personal-access-token-for-use-with-single-sign-on

@@ -20,11 +20,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check Bash syntax
-        run: bash -n manage_immutable_releases.sh tests/helpers/gh tests/test_helper.bash
-
-      - name: Run ShellCheck
-        run: shellcheck manage_immutable_releases.sh tests/helpers/gh tests/test_helper.bash
+      - name: Run lint checks
+        run: make lint
 
   test:
     name: Bats
@@ -47,4 +44,4 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Run Bats tests
-        run: bats tests
+        run: make test

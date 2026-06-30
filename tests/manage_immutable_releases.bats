@@ -41,7 +41,7 @@ setup() {
     assert_repository_state "service-api" $'false\tfalse'
 }
 
-@test "a glob matches every corresponding repository through paginated discovery" {
+@test "a glob reports discovery progress before processing matches" {
     add_repository "service-api" false false
     add_repository "service-web" false false
     add_repository "library" false false
@@ -49,9 +49,50 @@ setup() {
     run "${TOOL}" --org example-org --pattern 'service-*' --enable
 
     [ "${status}" -eq 0 ]
+    assert_output_contains "Discovering repositories in example-org (100 per API page)"
+    assert_output_contains "Fetched page 1: 3 repositories (3 total)."
+    assert_output_contains "Repository discovery complete: 3 repositories scanned."
     assert_output_contains "Matched repositories: 2"
     assert_output_contains "Summary: matched=2 changed=0 unchanged=0 planned=2 failed=0"
-    assert_log_contains "--paginate"
+    assert_log_contains "page=1"
+}
+
+@test "glob discovery reports progress across multiple pages" {
+    local index=1
+    local repository
+
+    while (( index <= 101 )); do
+        printf -v repository 'service-%03d' "${index}"
+        add_repository "${repository}" false false
+        index=$((index + 1))
+    done
+
+    run "${TOOL}" --org example-org --pattern 'service-*' --enable
+
+    [ "${status}" -eq 0 ]
+    assert_output_contains "Fetched page 1: 100 repositories (100 total)."
+    assert_output_contains "Fetched page 2: 1 repositories (101 total)."
+    assert_output_contains "Summary: matched=101 changed=0 unchanged=0 planned=101 failed=0"
+    assert_log_contains "page=2"
+}
+
+@test "glob discovery continues beyond 1000 repositories" {
+    local index=1
+    local repository
+
+    while (( index <= 1000 )); do
+        printf 'library-%04d\n' "${index}" >>"${MOCK_REPOS_FILE}"
+        index=$((index + 1))
+    done
+    add_repository "service-target" false false
+
+    run "${TOOL}" --org example-org --pattern 'service-*' --enable
+
+    [ "${status}" -eq 0 ]
+    assert_output_contains "Fetched page 11: 1 repositories (1001 total)."
+    assert_output_contains "Repository discovery complete: 1001 repositories scanned."
+    assert_output_contains "Matched repositories: 1"
+    assert_log_contains "page=11"
 }
 
 @test "no matches returns a failure without reading repository state" {
@@ -72,7 +113,7 @@ setup() {
     [ "${status}" -eq 0 ]
     assert_output_contains "Mode: LIVE"
     assert_output_contains "After: enabled=true, enforced_by_owner=false"
-    assert_output_contains "Result: change confirmed."
+    assert_output_contains "Passed: change confirmed."
     assert_log_contains "--method PUT"
     assert_repository_state "service-api" $'true\tfalse'
 }
@@ -134,8 +175,38 @@ setup() {
 
     [ "${status}" -eq 1 ]
     assert_output_contains "After: enabled=false, enforced_by_owner=false"
-    assert_output_contains "verification failed"
+    assert_output_contains "verification did not observe the requested state"
     assert_output_contains "failed=1"
+}
+
+@test "colour is enabled by default for unchanged, passed, and failed outcomes" {
+    add_repository "service-api" true false
+
+    run "${TOOL}" --org example-org --pattern service-api --enable
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *$'\033[33m⏭️'* ]]
+
+    printf 'false\tfalse\n' >"${MOCK_STATE_DIR}/service-api"
+    run "${TOOL}" --org example-org --pattern service-api --enable --kimi-mode
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *$'\033[32m✅   Passed'* ]]
+
+    printf 'false\tfalse\n' >"${MOCK_STATE_DIR}/service-api"
+    export MOCK_VERIFY_FAIL_REPO="service-api"
+    run "${TOOL}" --org example-org --pattern service-api --enable --kimi-mode
+    [ "${status}" -eq 1 ]
+    [[ "${output}" == *$'\033[31m❌   Failed'* ]]
+}
+
+@test "NO_COLOR suppresses ANSI colour codes" {
+    add_repository "service-api" true false
+    export NO_COLOR=1
+
+    run "${TOOL}" --org example-org --pattern service-api --enable
+
+    [ "${status}" -eq 0 ]
+    [[ "${output}" != *$'\033['* ]]
+    assert_output_contains "⏭️"
 }
 
 @test "authentication and discovery failures return an error" {
