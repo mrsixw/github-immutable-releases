@@ -48,15 +48,13 @@ setup_colors() {
         return
     fi
 
-    if [[ "${FORCE_COLOR:-}" == "1" || -t 1 || -t 2 ]]; then
-        RED=$'\033[31m'
-        GREEN=$'\033[32m'
-        YELLOW=$'\033[33m'
-        CYAN=$'\033[36m'
-        BLUE=$'\033[34m'
-        BOLD=$'\033[1m'
-        RESET=$'\033[0m'
-    fi
+    RED=$'\033[31m'
+    GREEN=$'\033[32m'
+    YELLOW=$'\033[33m'
+    CYAN=$'\033[36m'
+    BLUE=$'\033[34m'
+    BOLD=$'\033[1m'
+    RESET=$'\033[0m'
 }
 
 print_progress() {

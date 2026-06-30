@@ -107,10 +107,10 @@ For every matching repository, the script:
 4. Re-reads the state after a live mutation and verifies the result.
 5. Continues processing after individual failures and returns a summary.
 
-Interactive output uses green `✅` messages for successful changes, red `❌`
-messages for failures, yellow `⏭️` or `⚠️` messages for unchanged states and
-warnings, and progress icons during discovery. Set `NO_COLOR=1` to suppress
-ANSI colours while retaining the status symbols.
+Output uses green `✅` messages for successful changes, red `❌` messages for
+failures, yellow `⏭️` or `⚠️` messages for unchanged states and warnings, and
+progress icons during discovery. Colour is enabled by default; set
+`NO_COLOR=1` to suppress ANSI colours while retaining the status symbols.
 
 Repository-level disabling is rejected when immutable releases are enforced by
 the repository owner. The script returns a non-zero status if discovery fails,

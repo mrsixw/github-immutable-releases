@@ -203,9 +203,8 @@ setup() {
     assert_output_contains "failed=1"
 }
 
-@test "forced colour highlights unchanged, passed, and failed outcomes" {
+@test "colour is enabled by default for unchanged, passed, and failed outcomes" {
     add_repository "service-api" true false
-    export FORCE_COLOR=1
 
     run "${TOOL}" --org example-org --pattern service-api --enable
     [ "${status}" -eq 0 ]
@@ -225,7 +224,6 @@ setup() {
 
 @test "NO_COLOR suppresses ANSI colour codes" {
     add_repository "service-api" true false
-    export FORCE_COLOR=1
     export NO_COLOR=1
 
     run "${TOOL}" --org example-org --pattern service-api --enable
