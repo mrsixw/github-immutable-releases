@@ -95,6 +95,17 @@ setup() {
     assert_log_contains "page=11"
 }
 
+@test "a transient discovery failure is retried" {
+    add_repository "service-api" false false
+    export MOCK_DISCOVERY_FAIL_ONCE=true
+
+    run "${TOOL}" --org example-org --pattern 'service-*' --enable
+
+    [ "${status}" -eq 0 ]
+    assert_output_contains "Page 1 fetch failed (attempt 1/3); retrying in 0s."
+    assert_output_contains "Matched repositories: 1"
+}
+
 @test "no matches returns a failure without reading repository state" {
     add_repository "library" false false
 

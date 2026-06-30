@@ -6,6 +6,8 @@ setup_test_environment() {
     export MOCK_GH_LOG="${BATS_TEST_TMPDIR}/gh.log"
     export MOCK_REPOS_FILE="${BATS_TEST_TMPDIR}/repositories"
     export MOCK_STATE_DIR="${BATS_TEST_TMPDIR}/states"
+    export MOCK_DISCOVERY_FAILURE_MARKER="${BATS_TEST_TMPDIR}/discovery-failed-once"
+    export API_RETRY_DELAY_SECONDS=0
     export PATH="${BATS_TEST_DIRNAME}/helpers:${PATH}"
 
     mkdir -p "${MOCK_STATE_DIR}"
@@ -14,6 +16,7 @@ setup_test_environment() {
 
     unset MOCK_AUTH_FAIL
     unset MOCK_DISCOVERY_FAIL
+    unset MOCK_DISCOVERY_FAIL_ONCE
     unset MOCK_MUTATION_FAIL_REPO
     unset MOCK_STATE_FAIL_REPO
     unset MOCK_VERIFY_FAIL_REPO
